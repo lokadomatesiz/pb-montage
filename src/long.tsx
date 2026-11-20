@@ -33,7 +33,7 @@ export type LEl =
   | { k: "clock"; date: string; place?: string; typeAtSec?: number }
   | { k: "label"; text: string; source?: string }
   | { k: "big"; text: string; sub?: string; src?: string; countTo?: number; unit?: string; countFrom?: number; countSec?: number; x?: number; top?: number; strikeAtSec?: number; strikeW?: number }
-  | { k: "src"; text: string }
+  | { k: "src"; text: string; top?: number }
   | { k: "counter"; keys: [number, number][]; total: number; meters: number; dayLabel: string; sub?: string; subSec?: number }
   | { k: "circle"; cx: number; cy: number; rx: number; ry: number; text?: string; tx?: number; ty?: number }
   | { k: "plate"; text: string; hi?: string; x?: number; y?: number }
@@ -207,7 +207,7 @@ const ElView: React.FC<{ el: LEl; atSec: number; dur: number }> = ({ el, atSec, 
     }
     case "src": // B5 отдельной строкой: справа сверху, правый край 96 px
       return (
-        <div style={{ position: "absolute", right: 96, top: 64, opacity: a, transform: `translateY(${rise}px)`, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 34, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "4px 16px 6px", textShadow: `0 2px 8px ${T.carbon}` }}>
+        <div style={{ position: "absolute", right: 96, top: el.top ?? 64, opacity: a, transform: `translateY(${rise}px)`, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 34, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "4px 16px 6px", textShadow: `0 2px 8px ${T.carbon}` }}>
           {el.text}
         </div>
       );
