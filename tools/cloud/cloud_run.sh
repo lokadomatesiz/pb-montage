@@ -26,6 +26,15 @@ trap 'exit 130' INT TERM
 
 args=""; for x in "$@"; do args="$args '${x//\'/}'"; done
 T0=$(date +%s)
+# video-tools приватный: если Codespace не смог его склонировать (нет прав), кладём копию с ПК (D:\video-tools или $VIDEO_TOOLS_DIR)
+VT_LOCAL="${VIDEO_TOOLS_DIR:-/d/video-tools}"
+if [ -d "$VT_LOCAL/qc" ] && ! gh codespace ssh -c "$CS" -- "test -d \$HOME/video-tools/.git" >/dev/null 2>&1; then
+  VTW="$(cygpath -m "$VT_LOCAL" 2>/dev/null || echo "$VT_LOCAL")"
+  gh codespace ssh -c "$CS" -- "mkdir -p \$HOME/video-tools" >/dev/null 2>&1
+  MSYS_NO_PATHCONV=1 gh codespace cp -c "$CS" -r -e "$VTW/qc" "$VTW/cloud" "$VTW/README.md" "remote:/home/vscode/video-tools/" >/dev/null 2>&1 \
+    && echo "video-tools: копия с ПК положена в Codespace" || echo "!!! не удалось положить video-tools в Codespace"
+  gh codespace ssh -c "$CS" -- "find \$HOME/video-tools -name '*.sh' -o -name '*.py' | xargs sed -i 's/\r\$//'" >/dev/null 2>&1
+fi
 gh codespace ssh -c "$CS" -- "cd /workspaces/pb-montage && { git pull -q --ff-only 2>/dev/null; git -C \$HOME/video-tools pull -q --ff-only 2>/dev/null; true; } && REPO_DIR=/workspaces/pb-montage bash \$HOME/video-tools/cloud/remote_run.sh '${CLIP//\'/}' '${STEP//\'/}'$args"
 rc=$?
 dt=$(( $(date +%s) - T0 ))

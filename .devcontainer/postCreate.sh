@@ -22,17 +22,23 @@ sudo apt-get install -y -qq --no-install-recommends \
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # --- параллельно: npm, venv, rclone, video-tools, whisper.cpp ---
+# ждём ТОЛЬКО свои задачи по PID: голый `wait` зависает на tee из exec > >(tee …)
+PIDS=()
 ( cd "$REPO_DIR" && npm ci --no-audit --no-fund --loglevel=error && step "npm ci готово" ) &
+PIDS+=($!)
 ( python3 -m venv "$HOME/venv" && "$HOME/venv/bin/pip" install -q numpy soundfile && step "venv готово" ) &
+PIDS+=($!)
 (
   curl -fsSL "https://downloads.rclone.org/$RCLONE_V/rclone-$RCLONE_V-linux-amd64.zip" -o /tmp/rclone.zip \
     && unzip -q -o /tmp/rclone.zip -d /tmp/rclone-x && sudo install -m 755 /tmp/rclone-x/rclone-*/rclone /usr/local/bin/rclone \
     && mkdir -p "$HOME/.config/rclone" && step "rclone $(rclone version | head -1)"
 ) &
+PIDS+=($!)
 (
-  git clone -q https://github.com/lokadomatesiz/video-tools "$HOME/video-tools" \
-    && step "video-tools клонирован" || echo "!!! video-tools не склонирован (нет прав?) — remote_run.sh не заработает, пока не склонируете вручную"
+  GIT_TERMINAL_PROMPT=0 git clone -q https://github.com/lokadomatesiz/video-tools "$HOME/video-tools" \
+    && step "video-tools клонирован" || echo "!!! video-tools не склонирован (нет прав?) — cloud_run.sh с ПК положит копию сам (gh codespace cp)"
 ) &
+PIDS+=($!)
 (
   git clone -q --depth 1 --branch "$WHISPER_TAG" https://github.com/ggml-org/whisper.cpp "$HOME/whisper.cpp" \
     && cd "$HOME/whisper.cpp" && cmake -B build -DCMAKE_BUILD_TYPE=Release >/dev/null \
@@ -40,7 +46,8 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
     && bash models/download-ggml-model.sh small >/dev/null \
     && step "whisper.cpp $WHISPER_TAG + модель small готовы" || echo "!!! whisper.cpp не собран"
 ) &
-wait
+PIDS+=($!)
+wait "${PIDS[@]}"
 
 # PATH для whisper и venv
 grep -q 'whisper.cpp/build/bin' "$HOME/.bashrc" 2>/dev/null || echo 'export PATH="$HOME/whisper.cpp/build/bin:$HOME/venv/bin:$PATH"' >> "$HOME/.bashrc"
