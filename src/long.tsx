@@ -4,6 +4,7 @@ import { getAudioDurationInSeconds } from "@remotion/media-utils";
 import { Film, Scratches, Vignette } from "./film";
 import { GfxView, Gfx } from "./long-gfx";
 import { FONT, T } from "./tokens";
+import { IO } from "./ch203-gfx";
 
 // Шаблон длинного канала 2 «Pueblos Borrados» (1920×1080, 30 fps). Правила: RULES-CH2.md + VISUAL-CH2.md §4, §7, §8. Субтитров в кадре нет (.srt отдельным файлом).
 export const LW = 1920;
@@ -32,9 +33,40 @@ export type LEl =
   | { k: "hook"; text: string; sub?: string }
   | { k: "clock"; date: string; place?: string; typeAtSec?: number }
   | { k: "label"; text: string; source?: string }
-  | { k: "big"; text: string; sub?: string; src?: string; countTo?: number; unit?: string; countFrom?: number; countSec?: number; x?: number; top?: number; strikeAtSec?: number; strikeW?: number }
+  | {
+      k: "big";
+      text: string;
+      sub?: string;
+      src?: string;
+      countTo?: number;
+      unit?: string;
+      countFrom?: number;
+      countSec?: number;
+      x?: number;
+      top?: number;
+      strikeAtSec?: number;
+      strikeW?: number;
+      /** кегль цифры, px (по умолчанию 230; хук ≥ 620 — цифра ≥ 40 % высоты кадра) */
+      size?: number;
+      /** кегль подписи под цифрой, px (по умолчанию 64) */
+      subSize?: number;
+      /** "center" — по центру кадра (x не нужен) */
+      align?: "left" | "center";
+      /** удар на остановке счёта: масштаб 1 → 1,04 за 3 кадра и обратно */
+      punch?: boolean;
+    }
   | { k: "src"; text: string; top?: number }
-  | { k: "counter"; keys: [number, number][]; total: number; meters: number; dayLabel: string; sub?: string; subSec?: number }
+  | {
+      k: "counter";
+      keys: [number, number][];
+      total: number;
+      meters: number;
+      dayLabel: string;
+      sub?: string;
+      subSec?: number;
+      /** интервалы [от, до] в секундах ролика, когда плашка скрыта (растворение IO кадров) */
+      hideRanges?: [number, number][];
+    }
   | { k: "circle"; cx: number; cy: number; rx: number; ry: number; text?: string; tx?: number; ty?: number }
   | { k: "plate"; text: string; hi?: string; x?: number; y?: number }
   | { k: "quote"; text: string; author: string }
@@ -142,16 +174,32 @@ const LClipView: React.FC<{ clip: LClip; dur: number; fade: number; folder: stri
 };
 
 // ── элементы ──
-const useInOut = (dur: number, inF = 8) => {
+// единые вход и выход: IO кадров (как у схем ch203-gfx)
+const useInOut = (dur: number, inF = IO) => {
   const f = useCurrentFrame();
-  const a = Math.min(interpolate(f, [0, inF], [0, 1], clamp), interpolate(f, [dur - 6, dur], [1, 0], clamp));
+  const a = Math.min(interpolate(f, [0, inF], [0, 1], clamp), interpolate(f, [dur - IO, dur], [1, 0], clamp));
   const rise = interpolate(f, [0, inF], [12, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
   return { a, rise, f };
 };
 
+/** Цифры в слотах одной ширины: число меняется — соседние знаки не двигаются. Пробел-заполнитель «_» — пустой слот цифры. */
+const Slots: React.FC<{ text: string; digit: number }> = ({ text, digit }) => (
+  <span style={{ display: "inline-flex", alignItems: "baseline", whiteSpace: "pre" }}>
+    {[...text].map((ch, i) => {
+      const isDigit = /[0-9_]/.test(ch);
+      return (
+        <span key={i} style={{ display: "inline-block", width: isDigit ? `${digit}em` : undefined, textAlign: "center", visibility: ch === "_" ? "hidden" : undefined }}>
+          {ch === "_" ? "0" : ch}
+        </span>
+      );
+    })}
+  </span>
+);
+const pad = (n: string, w: number) => "_".repeat(Math.max(0, w - n.length)) + n;
+
 const ElView: React.FC<{ el: LEl; atSec: number; dur: number }> = ({ el, atSec, dur }) => {
   const { fps } = useVideoConfig();
-  const { a, rise, f } = useInOut(dur, el.k === "hook" ? 4 : 8);
+  const { a, rise, f } = useInOut(dur, el.k === "hook" ? 4 : IO);
   const sec = atSec + f / fps;
   switch (el.k) {
     case "hook":
@@ -180,51 +228,70 @@ const ElView: React.FC<{ el: LEl; atSec: number; dur: number }> = ({ el, atSec, 
             <span style={{ width: 14, height: 14, borderRadius: 7, background: T.lava }} />
             {el.text}
           </div>
-          {el.source ? <div style={{ fontFamily: FONT.oswald, fontWeight: 400, fontSize: 32, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "3px 14px 5px", textShadow: `0 2px 8px ${T.carbon}` }}>{el.source}</div> : null}
+          {el.source ? <div style={{ fontFamily: FONT.oswald, fontWeight: 400, fontSize: 42, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "3px 14px 5px", textShadow: `0 2px 8px ${T.carbon}` }}>{el.source}</div> : null}
         </div>
       );
     case "big": {
       // B7 · главная цифра
-      let text = el.text;
+      const size = el.size ?? 230;
+      const center = el.align === "center";
+      let body: React.ReactNode = el.text;
       let blur = 0;
+      let punch = 1;
       if (el.countTo !== undefined) {
+        // счёт easeOut; промежуточные значения размыты (VISUAL §6), цифры в слотах — число по центру не «пляшет»
         const from = el.countFrom ?? atSec;
-        const k = interpolate(sec, [from, from + (el.countSec ?? 1.4)], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
-        text = `${Math.round(el.countTo * k)}${el.unit ? " " + el.unit : ""}`;
-        blur = k < 0.4 ? 6 : 0;
+        const len = el.countSec ?? 1.4;
+        const k = interpolate(sec, [from, from + len], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
+        const n = String(Math.round(el.countTo * k));
+        body = (
+          <>
+            <Slots text={pad(n, String(el.countTo).length)} digit={0.66} />
+            {el.unit ? ` ${el.unit}` : ""}
+          </>
+        );
+        blur = interpolate(k, [0, 0.85, 1], [10, 3, 0], clamp);
+        if (el.punch) punch = 1 + 0.04 * interpolate(sec, [from + len, from + len + 3 / fps, from + len + 9 / fps], [0, 1, 0], clamp);
       }
       const strike = el.strikeAtSec !== undefined ? interpolate(sec, [el.strikeAtSec, el.strikeAtSec + 0.25], [0, 1], clamp) : 0;
       return (
-        <div style={{ position: "absolute", left: el.x ?? 96, top: el.top ?? 230, opacity: a, transform: `translateY(${rise}px)` }}>
-          <div style={{ position: "relative", fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 230, lineHeight: 1, color: T.lava, textShadow: shadow, filter: blur ? `blur(${blur}px)` : undefined, whiteSpace: "nowrap" }}>
-            {text}
-            {strike > 0 ? <div style={{ position: "absolute", left: -14, top: 128, height: 9, width: (el.strikeW ?? 340) * strike, background: T.hueso, transform: "rotate(-8deg)", transformOrigin: "left center", boxShadow: shadow }} /> : null}
+        <div style={{ position: "absolute", left: center ? 0 : el.x ?? 96, right: center ? 0 : undefined, top: el.top ?? 230, opacity: a, transform: `translateY(${rise}px) scale(${punch})`, transformOrigin: "50% 50%", textAlign: center ? "center" : undefined }}>
+          <div style={{ position: "relative", display: center ? "inline-block" : undefined, fontFamily: FONT.cinzel, fontWeight: 900, fontSize: size, lineHeight: 1, color: T.lava, textShadow: shadow, filter: blur ? `blur(${blur}px)` : undefined, whiteSpace: "nowrap" }}>
+            {body}
+            {strike > 0 ? <div style={{ position: "absolute", left: -14, top: size * 0.556, height: 9, width: (el.strikeW ?? 340) * strike, background: T.hueso, transform: "rotate(-8deg)", transformOrigin: "left center", boxShadow: shadow }} /> : null}
           </div>
-          {el.sub ? <div style={{ marginTop: 6, fontFamily: FONT.oswald, fontWeight: 600, fontSize: 64, color: T.hueso, textShadow: shadow, letterSpacing: 3 }}>{el.sub}</div> : null}
-          {el.src ? <div style={{ marginTop: 6, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 34, color: T.cenizaClara, textShadow: shadow }}>{el.src}</div> : null}
+          {el.sub ? <div style={{ marginTop: center ? -Math.round(size * 0.14) : 6, fontFamily: FONT.oswald, fontWeight: 600, fontSize: el.subSize ?? 64, color: T.hueso, textShadow: shadow, letterSpacing: 3 }}>{el.sub}</div> : null}
+          {el.src ? <div style={{ marginTop: 6, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 42, color: T.cenizaClara, textShadow: shadow }}>{el.src}</div> : null}
         </div>
       );
     }
     case "src": // B5 отдельной строкой: справа сверху, правый край 96 px
       return (
-        <div style={{ position: "absolute", right: 96, top: el.top ?? 64, opacity: a, transform: `translateY(${rise}px)`, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 34, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "4px 16px 6px", textShadow: `0 2px 8px ${T.carbon}` }}>
+        <div style={{ position: "absolute", right: 96, top: el.top ?? 64, opacity: a, transform: `translateY(${rise}px)`, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 42, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "4px 16px 6px", textShadow: `0 2px 8px ${T.carbon}` }}>
           {el.text}
         </div>
       );
     case "counter": {
       // G5 · сквозной счётчик: день и уровень озера; справа под зоной метки (y 230), правый край 96 px
+      // Плашка фиксированного размера (под «DÍA 63» и «+26,5 M»): меняются только цифры, каждая в слоте одной ширины, всё выровнено вправо.
       const ks = el.keys;
       const day = ks.length ? interpolate(sec, ks.map((k) => k[0]), ks.map((k) => k[1]), clamp) : 0;
-      const d = Math.round(day);
+      const d = String(Math.round(day));
       const m = ((day * el.meters) / el.total).toFixed(1).replace(".", ",");
-      const subA = el.sub ? interpolate(f, [0, 8, ((el.subSec ?? 3) - 0.3) * fps, (el.subSec ?? 3) * fps], [0, 1, 1, 0], clamp) : 0;
+      const subA = el.sub ? interpolate(f, [0, IO, ((el.subSec ?? 3) - 0.3) * fps, (el.subSec ?? 3) * fps], [0, 1, 1, 0], clamp) : 0;
+      const hide = (el.hideRanges ?? []).reduce((v, [h0, h1]) => Math.min(v, interpolate(sec, [h0 - IO / fps, h0, h1, h1 + IO / fps], [1, 0, 0, 1], clamp)), 1);
+      const mW = String(Math.floor(el.meters)).length + 3; // «+», целые, «,», десятые
       return (
-        <div style={{ position: "absolute", right: 96, top: 230, opacity: a, transform: `translateY(${rise}px)`, textAlign: "right" }}>
-          <div style={{ display: "inline-block", background: `${T.carbon}9e`, borderRadius: 8, padding: "10px 24px 14px" }}>
-            <div style={{ fontFamily: FONT.oswald, fontWeight: 600, fontSize: 50, color: T.hueso, letterSpacing: 3 }}>{`${el.dayLabel} ${d}`}</div>
-            <div style={{ fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 76, lineHeight: 1.05, color: T.lava, textShadow: shadow }}>{`+${m} M`}</div>
+        <div style={{ position: "absolute", right: 96, top: 230, width: 400, opacity: a * hide, transform: `translateY(${rise}px)` }}>
+          <div style={{ boxSizing: "border-box", width: 400, height: 168, background: `${T.carbon}9e`, borderRadius: 8, padding: "12px 26px 0", display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <div style={{ height: 62, lineHeight: "62px", fontFamily: FONT.oswald, fontWeight: 600, fontSize: 50, color: T.hueso, letterSpacing: 3, whiteSpace: "nowrap" }}>
+              {el.dayLabel} <Slots text={pad(d, String(el.total).length)} digit={0.56} />
+            </div>
+            <div style={{ height: 84, lineHeight: "84px", fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 76, color: T.lava, textShadow: shadow, whiteSpace: "nowrap" }}>
+              <Slots text={pad(`+${m}`, mW)} digit={0.66} /> M
+            </div>
           </div>
-          {el.sub ? <div style={{ marginTop: 6, opacity: subA, fontFamily: FONT.oswald, fontWeight: 500, fontSize: 36, color: T.hueso, textShadow: shadow, letterSpacing: 2 }}>{el.sub}</div> : null}
+          {el.sub ? <div style={{ marginTop: 8, textAlign: "right", opacity: subA, fontFamily: FONT.oswald, fontWeight: 500, fontSize: 42, color: T.hueso, textShadow: shadow, letterSpacing: 2, whiteSpace: "nowrap" }}>{el.sub}</div> : null}
         </div>
       );
     }

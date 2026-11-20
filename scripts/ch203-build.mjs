@@ -107,7 +107,9 @@ if (board.counter) {
   const keys = C.keys.map(([ch, a, day, dt = 0]) => [+at(ch, a, dt).t.toFixed(3), day]);
   const from = at(C.fromCh, C.fromA ?? "@start", C.fromDt ?? 0).t;
   const to = at(C.toCh, C.toA ?? "@end", C.toDt ?? 0).t;
-  overlays.push({ at: +from.toFixed(3), until: +to.toFixed(3), el: { k: "counter", keys, total: C.total, meters: C.meters, dayLabel: C.dayLabel, sub: C.sub, subSec: C.subSec ?? 3 } });
+  // hide: [[ch, a, dt, ch2, a2, dt2], …] — интервалы, когда плашка скрыта (например, гл. 1575)
+  const hideRanges = (C.hide ?? []).map(([c1, a1, d1, c2, a2, d2]) => [+at(c1, a1, d1 ?? 0).t.toFixed(3), +at(c2, a2, d2 ?? 0).t.toFixed(3)]);
+  overlays.push({ at: +from.toFixed(3), until: +to.toFixed(3), el: { k: "counter", keys, total: C.total, meters: C.meters, dayLabel: C.dayLabel, sub: C.sub, subSec: C.subSec ?? 3, hideRanges } });
 }
 overlays.sort((a, b) => a.at - b.at);
 
