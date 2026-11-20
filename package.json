@@ -1,0 +1,22 @@
+{
+  "name": "pueblos-borrados-montage",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Remotion project of the channel Pueblos Borrados. Code only: media, voice, music and fonts live on Google Drive (pb-cloud), never in this repository.",
+  "scripts": {
+    "dev": "remotion studio",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.545",
+    "@remotion/media-utils": "4.0.545",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.545"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}
