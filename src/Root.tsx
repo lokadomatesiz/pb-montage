@@ -19,6 +19,7 @@ export const RemotionRoot: React.FC = () => (
   <>
     <Composition id="CH2-01" component={LongTemplate} width={LW} height={LH} fps={FPS} durationInFrames={FPS * 555} defaultProps={ch2} calculateMetadata={calculateLongMetadata} />
     <Composition id="CH2-03" component={LongTemplate} width={LW} height={LH} fps={FPS} durationInFrames={FPS * 10} defaultProps={ch203Stub} calculateMetadata={calculateLongFromFile("ch2-03/props.json")} />
+    <Composition id="CH2-03-FINAL" component={LongTemplate} width={LW} height={LH} fps={FPS} durationInFrames={FPS * 10} defaultProps={ch203Stub} calculateMetadata={calculateLongFromFile("ch2-03/props-final.json")} />
     <Composition id="CH2-03-DRAFT" component={LongTemplate} width={LW} height={LH} fps={FPS} durationInFrames={FPS * 10} defaultProps={ch203Stub} calculateMetadata={calculateLongFromFile("ch2-03/props-draft.json")} />
     {shorts.map((s) => (
       <Composition key={s.id} id={s.id} component={ShortTemplate} width={W} height={H} fps={FPS} durationInFrames={FPS * 40} defaultProps={s.props} calculateMetadata={calculateShortMetadata} />

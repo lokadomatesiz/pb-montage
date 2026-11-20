@@ -9,7 +9,7 @@ const only = flag("only")?.split(",").map(Number);
 const browser = flag("browser");
 const scale = +scaleArg;
 const parts = +partsArg;
-const props = JSON.parse(fs.readFileSync(`public/${folder}/props.json`, "utf8"));
+const props = JSON.parse(fs.readFileSync(`public/${folder}/${/-FINAL$/.test(comp) ? "props-final" : "props"}.json`, "utf8"));
 const total = Math.ceil(props.totalSec * 30);
 const per = Math.ceil(total / parts);
 fs.mkdirSync(dir, { recursive: true });

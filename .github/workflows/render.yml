@@ -1,0 +1,102 @@
+# Финальный рендер длинного ролика (CH2-03) по частям параллельно → склейка со звуком → Google Диск.
+# Запуск только вручную: gh workflow run render.yml -f mode=final   (mode=smoke — проверка окружения, 30 кадров, без загрузки)
+# Медиа и тексты ролика в репозитории НЕ хранятся: подготовленный пакет (апскейленные кадры/клипы, props-final.json, мастер-звук) лежит на Диске в pb-cloud/ch2-03-valdivia/_final-in/.
+# Секрет RCLONE_CONF — только remotes gdrive_in (чтение) и gdrive_out (запись); в логи не печатается.
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "final — полный рендер; smoke — проверка окружения (30 кадров)"
+        default: "smoke"
+        type: choice
+        options: [smoke, final]
+      parts:
+        description: "число частей (параллельных заданий)"
+        default: "8"
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: render
+  cancel-in-progress: false
+env:
+  VIDEO_DIR: pb-cloud/ch2-03-valdivia
+  OUT_DIR: pb-cloud/_out/ch2-03-valdivia/final
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: |
+          if [ "${{ inputs.mode }}" = "smoke" ]; then echo 'matrix={"part":[0]}' >> "$GITHUB_OUTPUT"
+          else
+            n=${{ inputs.parts }}
+            echo "matrix={\"part\":[$(seq -s, 0 $((n-1)))]}" >> "$GITHUB_OUTPUT"
+          fi
+  video:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Системные пакеты
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg rclone libnss3 libdbus-1-3 libatk1.0-0t64 libasound2t64 libxrandr2 libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0t64 libpango-1.0-0 libcairo2 libcups2t64 libgbm1
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+      - name: rclone (конфиг из секрета)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+      - name: Пакет с Диска (кадры, клипы, props, шрифты)
+        run: |
+          rclone copy "gdrive_in:$VIDEO_DIR/_final-in/ch2-03-final" public/ch2-03-final --transfers 4 --stats-one-line --stats 30s
+          rclone copy "gdrive_in:$VIDEO_DIR/_final-in/props-final.json" public/ch2-03/ --stats-one-line
+          rclone copy "gdrive_in:pb-cloud/_brand" public/_brand --transfers 4 --stats-one-line
+          ls public/ch2-03-final | wc -l
+      - name: Рендер части
+        run: |
+          mkdir -p out
+          if [ "${{ inputs.mode }}" = "smoke" ]; then
+            npx remotion render src/index.ts CH2-03-FINAL out/smoke.mp4 --frames=0-29 --scale=1 --muted --concurrency=4 --image-format=jpeg --jpeg-quality=100
+            ls -l out/smoke.mp4
+          else
+            node scripts/render-parts.mjs CH2-03-FINAL ch2-03 out 1 ${{ inputs.parts }} final --only=${{ matrix.part }} --conc=4
+          fi
+      - name: Часть → Диск
+        if: ${{ inputs.mode == 'final' }}
+        run: |
+          rclone copy "out/part${{ matrix.part }}.mp4" "gdrive_out:$OUT_DIR/_parts" --stats-one-line
+  assemble:
+    needs: video
+    if: ${{ inputs.mode == 'final' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Пакеты
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg rclone
+      - name: rclone (конфиг из секрета)
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+      - name: Склейка частей со звуком
+        run: bash tools/cloud/steps/assemble_final.sh ${{ inputs.parts }}
+      - name: Финал → Диск
+        run: rclone copy out/CH2-03-final.mp4 "gdrive_out:$OUT_DIR" --stats-one-line

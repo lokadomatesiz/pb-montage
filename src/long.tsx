@@ -71,6 +71,7 @@ export type LEl =
   | { k: "plate"; text: string; hi?: string; x?: number; y?: number }
   | { k: "quote"; text: string; author: string }
   | { k: "bracket"; x: number; y0: number; y1: number; text: string }
+  | { k: "fog"; strength?: number }
   | { k: "final"; l1: string; l2: string };
 
 export type LOverlay = { at: number; until: number; el: LEl };
@@ -352,6 +353,25 @@ const ElView: React.FC<{ el: LEl; atSec: number; dur: number }> = ({ el, atSec, 
             <line x1={el.x} y1={el.y0} x2={el.x + 520} y2={el.y0} stroke={T.hueso} strokeWidth={2} strokeDasharray="14 12" opacity={0.7 * k} />
           </svg>
           <div style={{ position: "absolute", left: el.x + 40, top: (el.y0 + el.y1) / 2 - 70, fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 130, color: T.lava, textShadow: shadow, opacity: k }}>{el.text}</div>
+        </AbsoluteFill>
+      );
+    }
+    case "fog": {
+      // слой тумана: три мягких пятна кости плывут по нижней половине кадра (VISUAL §8: движется весь кадр под конечную заставку); ниже текста, прозрачность ≤ strength
+      const k = el.strength ?? 0.18;
+      const blobs = [
+        { y: 520, w: 1500, h: 420, speed: 0.22, phase: 0, amp: 160 },
+        { y: 700, w: 1700, h: 380, speed: -0.17, phase: 2, amp: 200 },
+        { y: 360, w: 1300, h: 300, speed: 0.12, phase: 4, amp: 140 },
+      ];
+      return (
+        <AbsoluteFill style={{ opacity: a * k, pointerEvents: "none" }}>
+          {blobs.map((b, i) => (
+            <div
+              key={i}
+              style={{ position: "absolute", top: b.y, left: -200 + f * b.speed + Math.sin(f / 150 + b.phase) * b.amp + (i === 1 ? 500 : 0), width: b.w, height: b.h, borderRadius: "50%", background: `radial-gradient(ellipse at center, ${T.hueso} 0%, ${T.hueso}00 68%)` }}
+            />
+          ))}
         </AbsoluteFill>
       );
     }

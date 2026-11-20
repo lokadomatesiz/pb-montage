@@ -122,6 +122,19 @@ for (const s of board.sfx) {
 }
 sfx.sort((a, b) => a.at - b.at);
 
+// ── музыка: план для scripts/ch203-music.py (сегменты, усиление, «провалы» перед ключевыми фактами) ──
+const musicPlan = board.music
+  ? (() => {
+      const T = (ch, a, dt = 0) => at(ch, a, dt).t;
+      const M = board.music;
+      return {
+        relDb: M.relDb,
+        duckDb: M.duckDb,
+        segs: M.segs.map((g) => ({ src: g.src, from: +T(g.fromCh, g.fromA, g.fromDt).toFixed(3), to: +T(g.toCh, g.toA, g.toDt).toFixed(3), fadeIn: g.in, fadeOut: g.out, gains: (g.gains ?? []).map((x) => [+T(x[0], x[1], x[2]).toFixed(3), +T(x[3], x[4], x[5]).toFixed(3), x[6]]) })),
+        dips: M.dips.map((d) => [+T(d[0], d[1], d[2]).toFixed(3), +(T(d[0], d[1], d[2]) + d[3]).toFixed(3)]),
+      };
+    })()
+  : null;
 const totalSec = +(vmap.total + board.tail).toFixed(2);
 const draft = process.argv.includes("--draft");
 let props = { folder: "ch2-03", voice: "vo.mp3", clips, overlays, sfx, totalSec };
@@ -130,7 +143,16 @@ if (draft) {
   const fix = (o) => (Array.isArray(o) ? o.map(fix) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, (k === "bg" || k === "src") && typeof v === "string" ? v.replace(/\.(webp|png)$/i, ".jpg") : fix(v)])) : o);
   props = { ...fix(props), folder: "ch2-03-draft", draft: true };
 }
-fs.writeFileSync(`${DIR}/props${draft ? "-draft" : ""}.json`, JSON.stringify(props));
+const final = process.argv.includes("--final");
+if (final) {
+  // финал 1920×1080: все кадры (кроме P01, P08, S01 ≥ 1920) и клипы апскейлены скриптом tools/cloud/steps/upscale_final.sh в public/ch2-03-final; кадры там — PNG
+  const KEEP = /^(P01|P08|S01)\./;
+  const toPng = (v) => (typeof v === "string" && /\.(webp|png|jpg|jpeg)$/i.test(v) && !KEEP.test(v) ? v.replace(/\.(webp|png|jpg|jpeg)$/i, ".png") : v);
+  const fixF = (o) => (Array.isArray(o) ? o.map(fixF) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, k === "bg" || k === "src" ? toPng(v) : fixF(v)])) : o);
+  props = { ...fixF(props), folder: "ch2-03-final" };
+  if (musicPlan) props = { ...props, music: { src: "music-bed.mp3", volumeDb: 0, duck: [] }, musicPlan };
+}
+fs.writeFileSync(`${DIR}/props${final ? "-final" : draft ? "-draft" : ""}.json`, JSON.stringify(props));
 
 // ── отчёт: длины планов ──
 const tl = [];
