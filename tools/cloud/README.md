@@ -35,3 +35,6 @@ bash tools/cloud/cloud_run.sh ch2-01 lint
 ## Свои шаги
 `tools/cloud/steps/<шаг>.sh` — получает `MAT` (материалы), `REV` (куда класть результат), `CLIP`, `REPO_DIR`, `VT` (video-tools); stdout → сводка.
 Шаги `render*` перед работой выполняют `bash tools/cloud/pull_brand.sh` (шрифты и зерно с Диска в `public/_brand`). **Финальный рендер — только по команде автора «рендери».**
+
+## Данные сборки на Диске (не в репозитории)
+`scripts/long-board.json` (раскладка длинного ролика, цитаты озвучки) в репозитории не хранится — лежит в `pb-cloud/<ролик>/long-board.json` (для CH2-01 — `pb-cloud/ch2-01/long-board.json`). Перед `node scripts/long-build.mjs`: `rclone copyto gdrive_in:pb-cloud/ch2-01/long-board.json scripts/long-board.json`. Файл в `.gitignore`.
