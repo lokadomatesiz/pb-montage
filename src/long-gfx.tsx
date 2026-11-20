@@ -2,6 +2,7 @@ import React from "react";
 import { AbsoluteFill, Easing, Img, interpolate, random, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { FONT, T } from "./tokens";
 import { G2, Topo, Pulse, InkLabel, INK, PAPER } from "./long-maps";
+import { Ch203Gfx, Ch203Spec } from "./ch203-gfx";
 
 // Графика длинного 1920×1080 (VISUAL-CH2 §7: B1, B2, B4, B6–B10). Время — локальный кадр Sequence; dur — длина в кадрах.
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
@@ -17,7 +18,8 @@ export type Gfx =
   | { g: "map" }
   | { g: "table"; photos: { src: string; at: number }[] }
   | { g: "life" }
-  | { g: "card"; n: number; title: string; date: string; bg: string };
+  | { g: "card"; n: number; title: string; date: string; bg: string }
+  | { g: "x"; spec: Ch203Spec };
 
 const Frame: React.FC<{ children: React.ReactNode; bg?: string }> = ({ children, bg = T.carbon }) => <AbsoluteFill style={{ backgroundColor: bg }}>{children}</AbsoluteFill>;
 
@@ -361,5 +363,7 @@ export const GfxView: React.FC<{ spec: Gfx; dur: number; folder: string }> = ({ 
       return <Life />;
     case "card":
       return <Card n={spec.n} title={spec.title} date={spec.date} bg={spec.bg} folder={folder} dur={dur} />;
+    case "x":
+      return <Ch203Gfx spec={spec.spec} dur={dur} folder={folder} />;
   }
 };

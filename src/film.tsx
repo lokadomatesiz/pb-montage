@@ -13,6 +13,9 @@ export const Film: React.FC = () => {
   );
 };
 
+/** Только виньетка — для быстрых черновиков (зерно-наложение и смена PNG каждый кадр — самое дорогое в рендере). */
+export const Vignette: React.FC = () => <AbsoluteFill style={{ pointerEvents: "none", background: `radial-gradient(ellipse at 50% 46%, transparent 55%, ${T.carbon}47 100%)` }} />;
+
 export const Scratches: React.FC = () => {
   const f = useCurrentFrame();
   const show = random(`s${Math.floor(f / 3)}`) < 0.35;

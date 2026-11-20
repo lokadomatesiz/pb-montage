@@ -1,7 +1,7 @@
 import React from "react";
 import { AbsoluteFill, CalculateMetadataFunction, Easing, Freeze, Img, OffthreadVideo, Sequence, interpolate, random, staticFile, useCurrentFrame, useVideoConfig, Audio } from "remotion";
 import { getAudioDurationInSeconds } from "@remotion/media-utils";
-import { Film, Scratches } from "./film";
+import { Film, Scratches, Vignette } from "./film";
 import { GfxView, Gfx } from "./long-gfx";
 import { FONT, T } from "./tokens";
 
@@ -32,7 +32,9 @@ export type LEl =
   | { k: "hook"; text: string; sub?: string }
   | { k: "clock"; date: string; place?: string; typeAtSec?: number }
   | { k: "label"; text: string; source?: string }
-  | { k: "big"; text: string; sub?: string; src?: string; countTo?: number; unit?: string; countFrom?: number; countSec?: number; x?: number; top?: number }
+  | { k: "big"; text: string; sub?: string; src?: string; countTo?: number; unit?: string; countFrom?: number; countSec?: number; x?: number; top?: number; strikeAtSec?: number; strikeW?: number }
+  | { k: "src"; text: string }
+  | { k: "counter"; keys: [number, number][]; total: number; meters: number; dayLabel: string; sub?: string; subSec?: number }
   | { k: "circle"; cx: number; cy: number; rx: number; ry: number; text?: string; tx?: number; ty?: number }
   | { k: "plate"; text: string; hi?: string; x?: number; y?: number }
   | { k: "quote"; text: string; author: string }
@@ -44,11 +46,13 @@ export type LSfx = { src: string; at: number; volumeDb: number; durSec?: number;
 export type LongProps = {
   folder: string;
   voice: string;
-  music: { src: string; volumeDb: number; duck: { from: number; to: number; floor: number; fadeSec: number }[] };
+  music?: { src: string; volumeDb: number; duck: { from: number; to: number; floor: number; fadeSec: number }[] };
   clips: LClip[];
   overlays: LOverlay[];
   sfx: LSfx[];
   totalSec: number;
+  /** черновик: без зерна-наложения (быстрее рендер); финал — всегда с зерном */
+  draft?: boolean;
 };
 
 export const calculateLongMetadata: CalculateMetadataFunction<LongProps> = async ({ props }) => {
@@ -56,8 +60,14 @@ export const calculateLongMetadata: CalculateMetadataFunction<LongProps> = async
   return { durationInFrames: Math.ceil(props.totalSec * 30) };
 };
 
+/** Метаданные из public/<папка>/props.json (раскладка ролика лежит вне репозитория): длина и все props берутся из файла. */
+export const calculateLongFromFile = (file: string): CalculateMetadataFunction<LongProps> => async () => {
+  const p: LongProps = await fetch(staticFile(file)).then((r) => r.json());
+  return { durationInFrames: Math.ceil(p.totalSec * 30), props: p };
+};
+
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
-const db = (x: number) => Math.pow(10, x / 20);
+const db =(x: number) => Math.pow(10, x / 20);
 const isVideo = (s: string) => /\.(mp4|mov|webm)$/i.test(s);
 const shadow = `0 4px 14px ${T.carbon}b3`;
 
@@ -183,11 +193,38 @@ const ElView: React.FC<{ el: LEl; atSec: number; dur: number }> = ({ el, atSec, 
         text = `${Math.round(el.countTo * k)}${el.unit ? " " + el.unit : ""}`;
         blur = k < 0.4 ? 6 : 0;
       }
+      const strike = el.strikeAtSec !== undefined ? interpolate(sec, [el.strikeAtSec, el.strikeAtSec + 0.25], [0, 1], clamp) : 0;
       return (
         <div style={{ position: "absolute", left: el.x ?? 96, top: el.top ?? 230, opacity: a, transform: `translateY(${rise}px)` }}>
-          <div style={{ fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 230, lineHeight: 1, color: T.lava, textShadow: shadow, filter: blur ? `blur(${blur}px)` : undefined, whiteSpace: "nowrap" }}>{text}</div>
+          <div style={{ position: "relative", fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 230, lineHeight: 1, color: T.lava, textShadow: shadow, filter: blur ? `blur(${blur}px)` : undefined, whiteSpace: "nowrap" }}>
+            {text}
+            {strike > 0 ? <div style={{ position: "absolute", left: -14, top: 128, height: 9, width: (el.strikeW ?? 340) * strike, background: T.hueso, transform: "rotate(-8deg)", transformOrigin: "left center", boxShadow: shadow }} /> : null}
+          </div>
           {el.sub ? <div style={{ marginTop: 6, fontFamily: FONT.oswald, fontWeight: 600, fontSize: 64, color: T.hueso, textShadow: shadow, letterSpacing: 3 }}>{el.sub}</div> : null}
           {el.src ? <div style={{ marginTop: 6, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 34, color: T.cenizaClara, textShadow: shadow }}>{el.src}</div> : null}
+        </div>
+      );
+    }
+    case "src": // B5 отдельной строкой: справа сверху, правый край 96 px
+      return (
+        <div style={{ position: "absolute", right: 96, top: 64, opacity: a, transform: `translateY(${rise}px)`, fontFamily: FONT.oswald, fontWeight: 400, fontSize: 34, color: T.hueso, background: `${T.carbon}8c`, borderRadius: 6, padding: "4px 16px 6px", textShadow: `0 2px 8px ${T.carbon}` }}>
+          {el.text}
+        </div>
+      );
+    case "counter": {
+      // G5 · сквозной счётчик: день и уровень озера; справа под зоной метки (y 230), правый край 96 px
+      const ks = el.keys;
+      const day = ks.length ? interpolate(sec, ks.map((k) => k[0]), ks.map((k) => k[1]), clamp) : 0;
+      const d = Math.round(day);
+      const m = ((day * el.meters) / el.total).toFixed(1).replace(".", ",");
+      const subA = el.sub ? interpolate(f, [0, 8, ((el.subSec ?? 3) - 0.3) * fps, (el.subSec ?? 3) * fps], [0, 1, 1, 0], clamp) : 0;
+      return (
+        <div style={{ position: "absolute", right: 96, top: 230, opacity: a, transform: `translateY(${rise}px)`, textAlign: "right" }}>
+          <div style={{ display: "inline-block", background: `${T.carbon}9e`, borderRadius: 8, padding: "10px 24px 14px" }}>
+            <div style={{ fontFamily: FONT.oswald, fontWeight: 600, fontSize: 50, color: T.hueso, letterSpacing: 3 }}>{`${el.dayLabel} ${d}`}</div>
+            <div style={{ fontFamily: FONT.cinzel, fontWeight: 900, fontSize: 76, lineHeight: 1.05, color: T.lava, textShadow: shadow }}>{`+${m} M`}</div>
+          </div>
+          {el.sub ? <div style={{ marginTop: 6, opacity: subA, fontFamily: FONT.oswald, fontWeight: 500, fontSize: 36, color: T.hueso, textShadow: shadow, letterSpacing: 2 }}>{el.sub}</div> : null}
         </div>
       );
     }
@@ -288,7 +325,7 @@ export const LongTemplate: React.FC<LongProps> = (p) => {
           </Sequence>
         ) : null,
       )}
-      <Film />
+      {p.draft ? <Vignette /> : <Film />}
       {p.overlays.map((o, i) => {
         const from = Math.round(o.at * 30);
         const dur = Math.max(12, Math.round((o.until - o.at) * 30));
@@ -299,14 +336,17 @@ export const LongTemplate: React.FC<LongProps> = (p) => {
         );
       })}
       <Audio src={staticFile(`${p.folder}/${p.voice}`)} />
-      <Audio
-        src={staticFile(`${p.folder}/${p.music.src}`)}
-        volume={(f) => {
-          const sec = f / 30;
-          const duck = p.music.duck.reduce((v, d) => Math.min(v, interpolate(sec, [d.from - d.fadeSec, d.from, d.to, d.to + d.fadeSec], [1, d.floor, d.floor, 1], clamp)), 1);
-          return db(p.music.volumeDb) * duck;
-        }}
-      />
+      {p.music ? (
+        <Audio
+          src={staticFile(`${p.folder}/${p.music.src}`)}
+          volume={(f) => {
+            const sec = f / 30;
+            const mu = p.music!;
+            const duck = mu.duck.reduce((v, d) => Math.min(v, interpolate(sec, [d.from - d.fadeSec, d.from, d.to, d.to + d.fadeSec], [1, d.floor, d.floor, 1], clamp)), 1);
+            return db(mu.volumeDb) * duck;
+          }}
+        />
+      ) : null}
       {p.sfx.map((s, i) => {
         const dur = s.durSec ? Math.ceil(s.durSec * 30) : undefined;
         const fd = Math.round((s.fadeSec ?? 0.5) * 30);
