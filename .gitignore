@@ -43,3 +43,4 @@ rclone.conf
 *.7z
 *.pdf
 usage.csv
+scripts/long-board.json
