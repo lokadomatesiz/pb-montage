@@ -35,7 +35,7 @@ if [ -d "$VT_LOCAL/qc" ] && ! gh codespace ssh -c "$CS" -- "test -d \$HOME/video
     && echo "video-tools: копия с ПК положена в Codespace" || echo "!!! не удалось положить video-tools в Codespace"
   gh codespace ssh -c "$CS" -- "find \$HOME/video-tools -name '*.sh' -o -name '*.py' | xargs sed -i 's/\r\$//'" >/dev/null 2>&1
 fi
-gh codespace ssh -c "$CS" -- "cd /workspaces/pb-montage && { git pull -q --ff-only 2>/dev/null; git -C \$HOME/video-tools pull -q --ff-only 2>/dev/null; true; } && REPO_DIR=/workspaces/pb-montage bash \$HOME/video-tools/cloud/remote_run.sh '${CLIP//\'/}' '${STEP//\'/}'$args"
+gh codespace ssh -c "$CS" -- "cd /workspaces/pb-montage && { git fetch -q origin && git reset -q --hard origin/main 2>/dev/null; git -C \$HOME/video-tools pull -q --ff-only 2>/dev/null; true; } && ${REVIEW:+REVIEW=$REVIEW }REPO_DIR=/workspaces/pb-montage bash \$HOME/video-tools/cloud/remote_run.sh '${CLIP//\'/}' '${STEP//\'/}'$args"
 rc=$?
 dt=$(( $(date +%s) - T0 ))
 # оценка расхода квоты: 4 ядра × время сеанса + 0,3 на запуск/остановку (правило из уроков канала 1)
